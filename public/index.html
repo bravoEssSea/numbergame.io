@@ -14,106 +14,127 @@
             --danger: #ef4444;
             --success: #22c55e;
             --disabled: #334155;
+            --warning: #f59e0b;
         }
 
         body {
-            margin: 0;
-            padding: 20px;
-            background-color: var(--bg);
-            color: var(--text);
+            margin: 0; padding: 0;
+            background-color: var(--bg); color: var(--text);
             font-family: system-ui, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            box-sizing: border-box;
-            overflow-x: hidden;
+            display: flex; height: 100vh; overflow: hidden; box-sizing: border-box;
         }
 
+        #login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: var(--bg); z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .login-box {
+            background: var(--panel); padding: 40px; border-radius: 12px;
+            text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); max-width: 350px; width: 85%;
+        }
+        .login-box input {
+            width: 100%; padding: 12px; margin: 15px 0; border-radius: 6px;
+            border: 1px solid #475569; background: #0f172a; color: white; font-size: 1rem; box-sizing: border-box;
+        }
+        .login-box button {
+            width: 100%; padding: 12px; background: var(--primary); border: none;
+            color: white; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 1rem;
+        }
+
+        .game-layout { display: flex; width: 100%; height: 100%; }
+        #sidebar {
+            width: 260px; background-color: #0f172a; border-right: 1px solid rgba(255,255,255,0.05);
+            display: flex; flex-direction: column; padding: 20px; box-sizing: border-box;
+        }
+        .sidebar-title { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin-bottom: 15px; font-weight: bold; }
+        #player-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex-grow: 1; }
+        .player-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: 6px; margin-bottom: 8px; font-size: 0.95rem; }
+        .player-item.is-host::after { content: "👑"; font-size: 0.8rem; }
+        .player-item.is-dead { opacity: 0.4; text-decoration: line-through; }
+        .player-item.is-spectator { color: var(--warning); }
+
+        .main-content { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; position: relative; }
         .header { text-align: center; margin-bottom: 10px; }
         #room-info { color: #64748b; font-size: 0.9rem; margin-top: 5px;}
+        #round-info { color: #3b82f6; font-weight: bold; margin-top: 2px; font-size: 0.95rem; }
         #player-status { font-weight: bold; font-size: 1.1rem; margin-top: 5px; }
         .alive { color: var(--success); }
         .eliminated { color: var(--danger); }
         .spectating { color: #eab308; }
 
-        .circle-container {
-            position: relative;
-            width: min(85vw, 450px);
-            height: min(85vw, 450px);
-            margin: 20px auto;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(30,41,59,0.6) 0%, rgba(15,23,42,0.8) 70%);
-            box-shadow: 0 0 40px rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+        #host-controls { display: none; gap: 10px; margin: 15px auto; background: rgba(255,255,255,0.05); padding: 10px 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); }
+        .host-btn { padding: 8px 16px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; color: white; }
+        #start-btn { background-color: var(--success); }
+        #pause-btn { background-color: var(--warning); }
+        #reset-btn { background-color: var(--danger); }
 
+        .circle-container {
+            position: relative; width: min(75vw, 420px); height: min(75vw, 420px); margin: 10px auto;
+            border-radius: 50%; background: radial-gradient(circle, rgba(30,41,59,0.6) 0%, rgba(15,23,42,0.8) 70%);
+            box-shadow: 0 0 40px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+        }
         .center-display { text-align: center; z-index: 10; pointer-events: none; }
         #timer-display { font-size: clamp(3rem, 10vw, 5rem); font-weight: 900; margin: 0; line-height: 1; }
         #phase-text { font-size: 1rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 5px;}
 
         .num-node {
-            position: absolute;
-            width: clamp(35px, 10vw, 50px);
-            height: clamp(35px, 10vw, 50px);
-            border-radius: 50%;
-            border: 2px solid #475569;
-            background-color: var(--panel);
-            color: var(--text);
-            font-size: clamp(0.9rem, 2.5vw, 1.2rem);
-            font-weight: 700;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transform: translate(-50%, -50%);
-            transition: all 0.15s ease;
-            user-select: none;
-            opacity: 0;
-            pointer-events: none; /* Hidden by default */
+            position: absolute; width: clamp(35px, 10vw, 48px); height: clamp(35px, 10vw, 48px);
+            border-radius: 50%; border: 2px solid #475569; background-color: var(--panel); color: var(--text);
+            font-size: clamp(0.9rem, 2.5vw, 1.1rem); font-weight: 700; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; transform: translate(-50%, -50%);
+            transition: all 0.15s ease; user-select: none; opacity: 0; pointer-events: none;
         }
+        .circle-container.phase-choice .num-node { opacity: 1; pointer-events: auto; }
+        .num-node:hover { border-color: var(--primary); color: var(--primary); transform: translate(-50%, -50%) scale(1.1); }
+        .num-node.selected { background-color: var(--primary); border-color: #60a5fa; color: white; box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
+        .num-node.disabled { background-color: var(--disabled); border-color: #1e293b; color: #475569; pointer-events: none; }
 
-        .circle-container.phase-choice .num-node {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .num-node:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-            transform: translate(-50%, -50%) scale(1.1);
-        }
-
-        .num-node.selected {
-            background-color: var(--primary);
-            border-color: #60a5fa;
-            color: white;
-            box-shadow: 0 0 15px rgba(59, 130, 246, 0.6);
-        }
-
-        .num-node.disabled {
-            background-color: var(--disabled);
-            border-color: #1e293b;
-            color: #475569;
-            pointer-events: none;
+        @media(max-width: 680px) {
+            body { flex-direction: column; overflow-y: auto; height: auto; }
+            .game-layout { flex-direction: column-reverse; height: auto; }
+            #sidebar { width: 100%; border-right: none; border-top: 1px solid rgba(255,255,255,0.05); height: 200px; }
         }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h1>The Elimination Circle</h1>
-        <div id="room-info">Connecting...</div>
-        <div id="player-status">Status: Waiting...</div>
+    <div id="login-overlay">
+        <div class="login-box">
+            <h2>Enter the Circle</h2>
+            <p style="color: #64748b; font-size: 0.9rem;">Choose a unique player handle to join the room</p>
+            <input type="text" id="username-input" placeholder="Your Nickname..." maxlength="14" autocomplete="off">
+            <button id="join-btn">JOIN ROOM</button>
+        </div>
     </div>
 
-    <div class="circle-container" id="wheel">
-        <div class="center-display">
-            <h1 id="timer-display">--</h1>
-            <div id="phase-text">Waiting for players</div>
+    <div class="game-layout">
+        <div id="sidebar">
+            <div class="sidebar-title">Lobby Members</div>
+            <ul id="player-list"></ul>
+        </div>
+
+        <div class="main-content">
+            <div class="header">
+                <h1>The Elimination Circle</h1>
+                <div id="room-info">Connecting...</div>
+                <div id="round-info">Lobby Stage</div>
+                <div id="player-status">Status: Entering Lobby...</div>
+                
+                <div id="host-controls">
+                    <span style="font-size:0.85rem; display:block; margin-bottom:5px; color:var(--warning);">👑 HOST ADMIN PANEL</span>
+                    <button class="host-btn" id="start-btn">START</button>
+                    <button class="host-btn" id="pause-btn">PAUSE</button>
+                    <button class="host-btn" id="reset-btn">RESET</button>
+                </div>
+            </div>
+
+            <div class="circle-container" id="wheel">
+                <div class="center-display">
+                    <h1 id="timer-display">--</h1>
+                    <div id="phase-text">LOBBY IDLE</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -123,54 +144,169 @@
     const timerDisplay = document.getElementById('timer-display');
     const phaseText = document.getElementById('phase-text');
     const roomInfo = document.getElementById('room-info');
+    const roundInfo = document.getElementById('round-info');
     const playerStatus = document.getElementById('player-status');
+    const playerList = document.getElementById('player-list');
+
+    const loginOverlay = document.getElementById('login-overlay');
+    const usernameInput = document.getElementById('username-input');
+    const joinBtn = document.getElementById('join-btn');
+    
+    const hostControls = document.getElementById('host-controls');
+    const startBtn = document.getElementById('start-btn');
+    const pauseBtn = document.getElementById('pause-btn');
+    const resetBtn = document.getElementById('reset-btn');
 
     let myChoice = null;
     let isAlive = true;
+    let activeWheelNodeCount = 0;
+    let lastLoggedTimeValue = -1; // Protects audio loops from duplicate ticks inside 1 second windows
 
-    // Build the 1-20 Circle Elements
-    const totalNodes = 20;
-    const radius = 41; 
-    for (let i = 1; i <= totalNodes; i++) {
-        const btn = document.createElement('button');
-        btn.className = 'num-node';
-        btn.textContent = i;
-        btn.dataset.number = i;
+    // Native Browser Audio Generator Engine
+    let audioCtx = null;
+    function playWarningBeep(isHighTone = false) {
+        try {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            // Resume context if browser suspended it due to lack of initial click gestures
+            if (audioCtx.state === 'suspended') audioCtx.resume();
 
-        const angle = (i / totalNodes) * 2 * Math.PI - Math.PI / 2;
-        const x = 50 + radius * Math.cos(angle);
-        const y = 50 + radius * Math.sin(angle);
-        btn.style.left = `${x}%`;
-        btn.style.top = `${y}%`;
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
 
-        btn.addEventListener('click', () => {
-            if (!isAlive) return;
-            document.querySelectorAll('.num-node').forEach(n => n.classList.remove('selected'));
-            btn.classList.add('selected');
-            myChoice = i;
-            socket.emit('submit_choice', i);
-        });
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
 
-        wheel.appendChild(btn);
+            // High crisp beep vs Low warning beep frequencies
+            oscillator.frequency.value = isHighTone ? 880 : 440; 
+            oscillator.type = 'sine';
+
+            // Snap volume curve to avoid browser audio clicking pops
+            gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.15);
+        } catch(e) {
+            console.log("Audio contextual playback blocked/unsupported", e);
+        }
     }
 
-    // Sync state updates from backend
+    joinBtn.addEventListener('click', executeJoinRoom);
+    usernameInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') executeJoinRoom(); });
+
+    function executeJoinRoom() {
+        const username = usernameInput.value.trim();
+        if(!username) return alert("Please enter a valid nickname!");
+        socket.emit('register_player', username);
+        loginOverlay.style.display = 'none';
+        
+        // Initialize browser audio object pool right upon joining gesture
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    function rebuildCircleWheel(nodeCount, currentPhase) {
+        document.querySelectorAll('.num-node').forEach(node => node.remove());
+        activeWheelNodeCount = nodeCount;
+
+        const radius = 41; 
+        for (let i = 1; i <= nodeCount; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'num-node';
+            btn.textContent = i;
+            btn.dataset.number = i;
+
+            const angle = (i / nodeCount) * 2 * Math.PI - Math.PI / 2;
+            const x = 50 + radius * Math.cos(angle);
+            const y = 50 + radius * Math.sin(angle);
+            btn.style.left = `${x}%`;
+            btn.style.top = `${y}%`;
+
+            if (currentPhase === 'LOBBY') btn.classList.add('disabled');
+
+            btn.addEventListener('click', () => {
+                if (!isAlive) return;
+                document.querySelectorAll('.num-node').forEach(n => n.classList.remove('selected'));
+                btn.classList.add('selected');
+                myChoice = i;
+                socket.emit('submit_choice', i);
+            });
+
+            wheel.appendChild(btn);
+        }
+    }
+
+    startBtn.addEventListener('click', () => socket.emit('host_action', 'start'));
+    resetBtn.addEventListener('click', () => socket.emit('host_action', 'reset'));
+    pauseBtn.addEventListener('click', () => {
+        if (pauseBtn.textContent === 'PAUSE') {
+            socket.emit('host_action', 'pause');
+        } else {
+            socket.emit('host_action', 'resume');
+        }
+    });
+
     socket.on('state_update', (data) => {
         roomInfo.textContent = `👥 ${data.activePlayers}/${data.totalConnections} Players Alive`;
-        timerDisplay.textContent = data.timeLeft;
+        roundInfo.textContent = data.phase === 'LOBBY' ? 'Lobby Stage' : `Round: ${data.round} (${data.maxNodes} Slots)`;
+        timerDisplay.textContent = (data.phase === 'LOBBY' || data.phase === 'PAUSED') ? '--' : data.timeLeft;
         phaseText.textContent = data.phase.replace('_', ' ');
 
-        // Manage wheel classes based on the active phase
+        // Audio Triggers Engine Checks
+        if (data.phase !== 'LOBBY' && data.phase !== 'PAUSED' && data.timeLeft !== lastLoggedTimeValue) {
+            lastLoggedTimeValue = data.timeLeft;
+
+            // 1. Choice Phase Trigger warning beeps at T-minus 3, 2, 1 seconds
+            if (data.phase === 'CHOICE_PHASE' && data.timeLeft <= 3 && data.timeLeft > 0) {
+                playWarningBeep(false);
+            } 
+            // 2. Intermission Phase Trigger warning beeps at T-minus 3, 2, 1 seconds
+            else if (data.phase === 'INTERMISSION' && data.timeLeft <= 3 && data.timeLeft > 0) {
+                playWarningBeep(false);
+            }
+            // 3. Absolute final second buzzer sound change handler
+            if (data.timeLeft === 0) {
+                playWarningBeep(true);
+            }
+        }
+
+        if (activeWheelNodeCount !== data.maxNodes) {
+            rebuildCircleWheel(data.maxNodes, data.phase);
+        }
+
+        if (socket.id === data.hostId) {
+            hostControls.style.display = 'flex';
+            startBtn.style.display = data.phase === 'LOBBY' ? 'inline-block' : 'none';
+            pauseBtn.style.display = data.phase === 'LOBBY' ? 'none' : 'inline-block';
+            pauseBtn.textContent = data.phase === 'PAUSED' ? 'RESUME' : 'PAUSE';
+        } else {
+            hostControls.style.display = 'none';
+        }
+
         wheel.className = 'circle-container'; 
         if (data.phase === 'CHOICE_PHASE' && isAlive) {
             wheel.classList.add('phase-choice');
         }
 
-        // Handle structural phase switches
         if (data.phase === 'BLIND_PHASE') {
             myChoice = null;
             document.querySelectorAll('.num-node').forEach(n => n.classList.remove('selected', 'disabled'));
         }
+        if (data.phase === 'LOBBY') {
+            document.querySelectorAll('.num-node').forEach(n => n.classList.add('disabled'));
+        }
+
+        playerList.innerHTML = '';
+        data.lobbyRegistry.forEach(player => {
+            const li = document.createElement('li');
+            li.className = 'player-item';
+            li.textContent = player.name;
+            if (player.id === data.hostId) li.classList.add('is-host');
+            if (!player.isRegistered) li.classList.add('is-spectator');
+            else if (!player.isAlive) li.classList.add('is-dead');
+            playerList.appendChild(li);
+        });
     });
 
     socket.on('player_status', (status) => {
@@ -184,7 +320,7 @@
             document.querySelectorAll('.num-node').forEach(n => n.classList.add('disabled'));
         } else {
             playerStatus.className = 'spectating';
-            playerStatus.textContent = "Status: Spectating (Mid-game join)";
+            playerStatus.textContent = "Status: Spectating";
             document.querySelectorAll('.num-node').forEach(n => n.classList.add('disabled'));
         }
     });
@@ -192,6 +328,8 @@
     socket.on('announcement', (msg) => {
         phaseText.textContent = msg;
     });
+
+    rebuildCircleWheel(20, 'LOBBY');
 </script>
 </body>
 </html>
