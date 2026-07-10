@@ -15,7 +15,7 @@ app.get('/', (req, res) => {
 // Master Game State
 let players = {}; 
 let gamePhase = 'LOBBY'; 
-let previousPhase = 'BLIND_PHASE'; 
+let previousPhase = 'CHOICE_PHASE'; 
 let phaseTimer = 0;
 let hostId = null;
 let gameTicker = null;
@@ -27,15 +27,10 @@ function changePhase(newPhase, duration) {
     gamePhase = newPhase;
     phaseTimer = duration;
     
-    if (newPhase === 'BLIND_PHASE') {
-        Object.keys(players).forEach(id => {
-            if (players[id].isAlive && players[id].isRegistered) {
-                players[id].currentChoice = null;
-            }
-        });
-    }
+    // REMOVED: The choice clearing loop has been taken out.
+    // Choices now persist from the previous round automatically.
     
-    if (newPhase === 'INTERMISSION') {
+    if (newPhase === 'GET_READY') {
         evaluateChoices();
     }
     
@@ -46,6 +41,7 @@ function evaluateChoices() {
     let counts = {};
     let alivePlayers = Object.values(players).filter(p => p.isAlive && p.isRegistered);
 
+    // Count choices (including persistent ones)
     alivePlayers.forEach(p => {
         if (p.currentChoice !== null) {
             counts[p.currentChoice] = (counts[p.currentChoice] || 0) + 1;
@@ -55,6 +51,9 @@ function evaluateChoices() {
     Object.keys(players).forEach(id => {
         let p = players[id];
         if (p.isAlive && p.isRegistered) {
+            // Elimination condition: 
+            // 1. They failed to choose anything at all (currentChoice is null)
+            // 2. Or their chosen number is a duplicate
             if (p.currentChoice === null || counts[p.currentChoice] > 1) {
                 p.isAlive = false;
                 io.to(id).emit('player_status', 'ELIMINATED');
@@ -73,7 +72,17 @@ function evaluateChoices() {
     } else {
         roundCounter++;
         if (roundCounter % 3 === 1 && roundCounter > 1) {
+            // Drop by 5 options, but if the circle shrinks past their current selection, 
+            // the player will need to pick a new valid number or face elimination.
             currentMaxNodes = Math.max(5, currentMaxNodes - 5); 
+            
+            // Check if anyone's persistent choice is now out of bounds
+            Object.keys(players).forEach(id => {
+                if (players[id].currentChoice > currentMaxNodes) {
+                    players[id].currentChoice = null; // Reset them because their option vanished
+                }
+            });
+
             io.emit('announcement', `⚠️ BOTTLENECK! Circle compressed to ${currentMaxNodes} options!`);
         }
     }
@@ -87,7 +96,8 @@ function broadcastState() {
         id: p.id,
         name: p.name,
         isAlive: p.isAlive,
-        isRegistered: p.isRegistered
+        isRegistered: p.isRegistered,
+        currentChoice: p.currentChoice 
     }));
 
     io.emit('state_update', {
@@ -111,14 +121,12 @@ function startGameLoop() {
             phaseTimer--;
             broadcastState();
         } else {
-            if (gamePhase === 'BLIND_PHASE') {
-                changePhase('CHOICE_PHASE', 5);
-            } else if (gamePhase === 'CHOICE_PHASE') {
-                changePhase('INTERMISSION', 8); // Changed from 20 down to 8 seconds
-            } else if (gamePhase === 'INTERMISSION') {
+            if (gamePhase === 'CHOICE_PHASE') {
+                changePhase('GET_READY', 8); 
+            } else if (gamePhase === 'GET_READY') {
                 let survivors = Object.values(players).filter(p => p.isAlive && p.isRegistered);
                 if (survivors.length > 1) {
-                    changePhase('BLIND_PHASE', 5);
+                    changePhase('CHOICE_PHASE', 5);
                 } else {
                     gamePhase = 'LOBBY';
                     broadcastState();
@@ -158,10 +166,13 @@ io.on('connection', (socket) => {
             roundCounter = 1;
             currentMaxNodes = 20; 
             Object.keys(players).forEach(id => {
-                if (players[id].isRegistered) players[id].isAlive = true;
+                if (players[id].isRegistered) {
+                    players[id].isAlive = true;
+                    players[id].currentChoice = null; // Fresh start
+                }
             });
             io.emit('player_status', 'ALIVE');
-            changePhase('BLIND_PHASE', 5);
+            changePhase('CHOICE_PHASE', 5);
             startGameLoop();
         } else if (action === 'pause' && gamePhase !== 'LOBBY' && gamePhase !== 'PAUSED') {
             previousPhase = gamePhase;
