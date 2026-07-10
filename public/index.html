@@ -72,7 +72,16 @@
         }
         .sidebar-title { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin-bottom: 15px; font-weight: bold; }
         #player-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex-grow: 1; }
-        .player-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: 6px; margin-bottom: 8px; font-size: 0.95rem; }
+        .player-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: 6px; margin-bottom: 8px; font-size: 0.95rem; border: 1px solid transparent; }
+        
+        /* FIXED: Visual style highlights designed specifically to pinpoint your row element */
+        .player-item.is-me {
+            background-color: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.4);
+            font-weight: bold;
+            color: #60a5fa;
+        }
+        
         .player-item.is-host::after { content: "👑"; font-size: 0.8rem; margin-left: auto; order: 2; }
         .player-item.is-dead { opacity: 0.4; text-decoration: line-through; }
         .player-item.is-spectator { color: var(--warning); }
@@ -117,6 +126,14 @@
         .num-node:hover { border-color: var(--primary); color: var(--primary); transform: translate(-50%, -50%) scale(1.1); }
         .num-node.selected { background-color: var(--primary); border-color: #60a5fa; color: white; box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
         .num-node.disabled { background-color: var(--disabled); border-color: #1e293b; color: #475569; pointer-events: none; }
+        
+        .num-node.is-targeted-danger {
+            background-color: #450a0a !important;
+            border-color: var(--danger) !important;
+            color: #ef4444 !important;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
+            animation: text-grow 0.2s ease-in alternate infinite;
+        }
 
         @media(max-width: 680px) {
             body { flex-direction: column; overflow-y: auto; height: auto; }
@@ -267,10 +284,8 @@
             btn.style.left = `${x}%`; btn.style.top = `${y}%`;
             
             if (currentPhase === 'LOBBY') btn.classList.add('disabled');
-            
-            if (myChoice === i) {
-                btn.classList.add('selected');
-            }
+            if (myChoice === i) btn.classList.add('selected');
+            if (visualRouletteLockValue === i) btn.classList.add('is-targeted-danger');
 
             btn.addEventListener('click', () => {
                 if (!isAlive) return;
@@ -300,16 +315,12 @@
         else socket.emit('host_action', 'resume');
     });
 
-    // Intercept Level 5 Roulette reveal announcements from server
     socket.io.on('packet', (packet) => {
         if (packet.data && packet.data[0] === 'roulette_reveal') {
             const targetedNum = packet.data[1];
             visualRouletteLockValue = targetedNum;
-            
-            // CLEAN POP-UP: Simple typography presentation without the full-screen red borders or heavy shadows
             timerDisplay.textContent = `🎯 NUMBER: ${targetedNum}`;
             phaseText.textContent = "ELIMINATION LOCK";
-
             playWarningBeep(false, 120);
         }
     });
@@ -318,12 +329,10 @@
         roomInfo.textContent = `👥 ${data.activePlayers}/${data.totalConnections} Players Alive`;
         roundInfo.textContent = data.phase === 'LOBBY' ? 'Lobby Stage' : `Round: ${data.round} (${data.maxNodes} Slots)`;
         
-        // FIXED: Vanishes cleanly when entering the choice phase loop again
         if (data.phase === 'CHOICE_PHASE') {
             visualRouletteLockValue = null;
         }
 
-        // FIXED: Force hard reset cleanup back to clean slate defaults if host pushes back to lobby
         if (data.phase === 'LOBBY') {
             myChoice = null;
             visualRouletteLockValue = null;
@@ -365,7 +374,6 @@
             gameOverOverlay.style.display = 'none';
         }
 
-        // FIXED: Guarantees circle geometry elements redraw perfectly to 20 when size metrics update
         if (activeWheelNodeCount !== data.maxNodes) {
             if (data.maxNodes < activeWheelNodeCount && data.phase !== 'LOBBY' && data.phase !== 'GAME_OVER') triggerScreenFlashGraphic(data.maxNodes);
             rebuildCircleWheel(data.maxNodes, data.phase);
@@ -394,22 +402,40 @@
             document.querySelectorAll('.num-node').forEach(n => n.classList.add('disabled'));
         }
 
+        // Render Sidebar Active Roster with highlighting hooks
         playerList.innerHTML = '';
         data.lobbyRegistry.forEach(player => {
-            const li = document.createElement('li'); li.className = 'player-item';
-            const nameSpan = document.createElement('span'); nameSpan.textContent = player.name; li.appendChild(nameSpan);
+            const li = document.createElement('li'); 
+            li.className = 'player-item';
+            
+            // FIXED: Automatically appends highlighting styles if the connection matches your socket ID
+            if (player.id === socket.id) {
+                li.classList.add('is-me');
+            }
             if (player.id === data.hostId) li.classList.add('is-host');
-            if (!player.isRegistered) li.classList.add('is-spectator');
-            else if (!player.isAlive) {
+            
+            const nameSpan = document.createElement('span'); 
+            nameSpan.textContent = player.name; 
+            li.appendChild(nameSpan);
+            
+            if (!player.isRegistered) {
+                li.classList.add('is-spectator');
+            } else if (!player.isAlive) {
                 li.classList.add('is-dead');
-                if (data.phase === 'GET_READY') {
-                    const badge = document.createElement('span'); badge.className = 'choice-badge ' + (player.currentChoice ? '' : 'missed');
-                    badge.textContent = player.currentChoice ? `Choice: ${player.currentChoice}` : 'No Vote'; li.appendChild(badge);
+                
+                // FIXED: Eliminated players now leave their choice badge up permanently during the intermission step
+                if (data.phase === 'GET_READY' || data.phase === 'CHOICE_PHASE') {
+                    const badge = document.createElement('span'); 
+                    badge.className = 'choice-badge ' + (player.currentChoice ? '' : 'missed');
+                    badge.textContent = player.currentChoice ? `Choice: ${player.currentChoice}` : 'No Vote'; 
+                    li.appendChild(badge);
                 }
             } else {
                 if (data.phase === 'GET_READY' && player.currentChoice) {
-                    const badge = document.createElement('span'); badge.className = 'choice-badge';
-                    badge.textContent = `Choice: ${player.currentChoice}`; li.appendChild(badge);
+                    const badge = document.createElement('span'); 
+                    badge.className = 'choice-badge';
+                    badge.textContent = `Choice: ${player.currentChoice}`; 
+                    li.appendChild(badge);
                 }
             }
             playerList.appendChild(li);
