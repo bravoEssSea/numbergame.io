@@ -30,13 +30,9 @@ function changePhase(newPhase, duration) {
     phaseTimer = duration;
     
     if (newPhase === 'CHOICE_PHASE') {
-        rouletteNumber = null; // Clear out the roulette targets
-        
-        // Loop through all active players
+        rouletteNumber = null;
         Object.keys(players).forEach(id => {
             if (players[id].isAlive && players[id].isRegistered) {
-                // FIXED: If we are down to just 5 nodes, force clear choices back to null 
-                // so players must manually make a fresh choice this round.
                 if (currentMaxNodes === 5) {
                     players[id].currentChoice = null;
                 }
@@ -56,12 +52,9 @@ function evaluateChoices() {
     let alivePlayers = Object.values(players).filter(p => p.isAlive && p.isRegistered);
 
     if (currentMaxNodes === 5) {
-        // --- LEVEL 5 FINAL SHOWDOWN PROTOCOL ---
-        // SECRET PICK: The server picks the target number completely blindly *after* choice window ends
         rouletteNumber = Math.floor(Math.random() * 5) + 1;
         io.emit('roulette_reveal', rouletteNumber);
 
-        // Enforce 3 second suspense delay loop before locking kills
         setTimeout(() => {
             Object.keys(players).forEach(id => {
                 let p = players[id];
@@ -77,7 +70,6 @@ function evaluateChoices() {
         }, 3000);
 
     } else {
-        // --- STANDARD DUPLICATE ELIMINATION ---
         alivePlayers.forEach(p => {
             if (p.currentChoice !== null) {
                 counts[p.currentChoice] = (counts[p.currentChoice] || 0) + 1;
@@ -218,21 +210,45 @@ io.on('connection', (socket) => {
     socket.on('host_action', (action) => {
         if (socket.id !== hostId) return;
 
-        if (action === 'start' && (gamePhase === 'LOBBY' || gamePhase === 'GAME_OVER')) {
-            roundCounter = 1;
-            currentMaxNodes = 20; 
-            podiumData = [];
-            rouletteNumber = null;
-            Object.keys(players).forEach(id => {
-                if (players[id].isRegistered) {
-                    players[id].isAlive = true;
-                    players[id].currentChoice = null;
-                    players[id].eliminatedInRound = 0;
-                }
-            });
-            io.emit('player_status', 'ALIVE');
-            changePhase('CHOICE_PHASE', 5);
-            startGameLoop();
+        if (action === 'start') {
+            // FIXED: Check what phase we are currently in when 'start' is pressed
+            if (gamePhase === 'GAME_OVER') {
+                // If ending a match, kick back to the baseline LOBBY state first
+                gamePhase = 'LOBBY';
+                phaseTimer = 0;
+                roundCounter = 1;
+                currentMaxNodes = 20;
+                podiumData = [];
+                rouletteNumber = null;
+                
+                Object.keys(players).forEach(id => {
+                    if (players[id].isRegistered) {
+                        players[id].isAlive = true;
+                        players[id].currentChoice = null;
+                        players[id].eliminatedInRound = 0;
+                    }
+                });
+                
+                io.emit('player_status', 'ALIVE');
+                io.emit('announcement', "🔄 Match returned to Lobby! Waiting for host to start.");
+                broadcastState();
+            } else if (gamePhase === 'LOBBY') {
+                // If in the lobby, begin the countdown loops immediately
+                roundCounter = 1;
+                currentMaxNodes = 20; 
+                podiumData = [];
+                rouletteNumber = null;
+                Object.keys(players).forEach(id => {
+                    if (players[id].isRegistered) {
+                        players[id].isAlive = true;
+                        players[id].currentChoice = null;
+                        players[id].eliminatedInRound = 0;
+                    }
+                });
+                io.emit('player_status', 'ALIVE');
+                changePhase('CHOICE_PHASE', 5);
+                startGameLoop();
+            }
         } else if (action === 'pause' && gamePhase !== 'LOBBY' && gamePhase !== 'PAUSED' && gamePhase !== 'GAME_OVER') {
             previousPhase = gamePhase;
             gamePhase = 'PAUSED';
