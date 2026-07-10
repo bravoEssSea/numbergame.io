@@ -201,7 +201,10 @@ io.on('connection', (socket) => {
         if (!players[socket.id]) return;
         players[socket.id].name = nickname;
         players[socket.id].isRegistered = true;
-        players[socket.id].isAlive = (gamePhase === 'LOBBY');
+        
+        // FIXED: Late-joiners are marked as ALIVE unless a podium screen is active.
+        // They will default to no selection (null) and must pick a number before CHOICE_PHASE ticks down.
+        players[socket.id].isAlive = (gamePhase !== 'GAME_OVER');
         
         socket.emit('player_status', players[socket.id].isAlive ? 'ALIVE' : 'SPECTATOR');
         broadcastState();
@@ -211,9 +214,7 @@ io.on('connection', (socket) => {
         if (socket.id !== hostId) return;
 
         if (action === 'start') {
-            // FIXED: Check what phase we are currently in when 'start' is pressed
             if (gamePhase === 'GAME_OVER') {
-                // If ending a match, kick back to the baseline LOBBY state first
                 gamePhase = 'LOBBY';
                 phaseTimer = 0;
                 roundCounter = 1;
@@ -233,7 +234,6 @@ io.on('connection', (socket) => {
                 io.emit('announcement', "🔄 Match returned to Lobby! Waiting for host to start.");
                 broadcastState();
             } else if (gamePhase === 'LOBBY') {
-                // If in the lobby, begin the countdown loops immediately
                 roundCounter = 1;
                 currentMaxNodes = 20; 
                 podiumData = [];
