@@ -23,7 +23,7 @@ let gameTicker = null;
 let roundCounter = 1;
 let currentMaxNodes = 20; 
 let podiumData = []; 
-let rouletteNumber = null; // Stores the targeted number during a level-5 final showdown
+let rouletteNumber = null;
 
 function changePhase(newPhase, duration) {
     gamePhase = newPhase;
@@ -31,9 +31,15 @@ function changePhase(newPhase, duration) {
     
     if (newPhase === 'CHOICE_PHASE') {
         rouletteNumber = null; // Clear out the roulette targets
+        
+        // Loop through all active players
         Object.keys(players).forEach(id => {
             if (players[id].isAlive && players[id].isRegistered) {
-                players[id].currentChoice = null;
+                // FIXED: If we are down to just 5 nodes, force clear choices back to null 
+                // so players must manually make a fresh choice this round.
+                if (currentMaxNodes === 5) {
+                    players[id].currentChoice = null;
+                }
             }
         });
     }
@@ -49,21 +55,17 @@ function evaluateChoices() {
     let counts = {};
     let alivePlayers = Object.values(players).filter(p => p.isAlive && p.isRegistered);
 
-    // Context Evaluation Branches
     if (currentMaxNodes === 5) {
         // --- LEVEL 5 FINAL SHOWDOWN PROTOCOL ---
-        // Generate a random target number from 1 to 5
+        // SECRET PICK: The server picks the target number completely blindly *after* choice window ends
         rouletteNumber = Math.floor(Math.random() * 5) + 1;
-        
-        // Flag immediate visual updates so clients can view the target
         io.emit('roulette_reveal', rouletteNumber);
 
-        // DELAY ELIMINATIONS BY 3 SECONDS: Use a wrapper timeout so players can react
+        // Enforce 3 second suspense delay loop before locking kills
         setTimeout(() => {
             Object.keys(players).forEach(id => {
                 let p = players[id];
                 if (p.isAlive && p.isRegistered) {
-                    // Eliminate if they didn't vote, or if they matched the roulette number
                     if (p.currentChoice === null || p.currentChoice === rouletteNumber) {
                         p.isAlive = false;
                         p.eliminatedInRound = roundCounter;
@@ -159,7 +161,7 @@ function broadcastState() {
         round: roundCounter,
         maxNodes: currentMaxNodes,
         podium: podiumData,
-        roulette: rouletteNumber // Pipe state hook downwards
+        roulette: rouletteNumber
     });
 }
 
