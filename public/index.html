@@ -99,17 +99,11 @@
             position: relative; width: min(75vw, 420px); height: min(75vw, 420px); margin: 10px auto;
             border-radius: 50%; background: radial-gradient(circle, rgba(30,41,59,0.6) 0%, rgba(15,23,42,0.8) 70%);
             box-shadow: 0 0 40px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
-        }
-        
-        .circle-container.roulette-danger-glow {
-            box-shadow: 0 0 50px rgba(239, 68, 68, 0.6), inset 0 0 30px rgba(239, 68, 68, 0.2);
-            border: 2px solid rgba(239, 68, 68, 0.4);
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
 
         .center-display { text-align: center; z-index: 10; pointer-events: none; }
-        #timer-display { font-size: clamp(3rem, 10vw, 5rem); font-weight: 900; margin: 0; line-height: 1; transition: color 0.2s; }
-        #timer-display.roulette-reveal-style { color: var(--danger); font-size: clamp(2rem, 7vw, 3.5rem); text-shadow: 0 0 15px rgba(239, 68, 68, 0.8); }
-        
+        #timer-display { font-size: clamp(3rem, 10vw, 5rem); font-weight: 900; margin: 0; line-height: 1; color: var(--text); }
         #phase-text { font-size: 1rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 5px;}
 
         .num-node {
@@ -123,14 +117,6 @@
         .num-node:hover { border-color: var(--primary); color: var(--primary); transform: translate(-50%, -50%) scale(1.1); }
         .num-node.selected { background-color: var(--primary); border-color: #60a5fa; color: white; box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
         .num-node.disabled { background-color: var(--disabled); border-color: #1e293b; color: #475569; pointer-events: none; }
-        
-        .num-node.is-targeted-danger {
-            background-color: #450a0a !important;
-            border-color: var(--danger) !important;
-            color: #ef4444 !important;
-            box-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
-            animation: text-grow 0.2s ease-in alternate infinite;
-        }
 
         @media(max-width: 680px) {
             body { flex-direction: column; overflow-y: auto; height: auto; }
@@ -244,8 +230,10 @@
             const gainNode = audioCtx.createGain();
             oscillator.connect(gainNode);
             gainNode.connect(audioCtx.destination);
+            
             oscillator.frequency.value = customFreq ? customFreq : (isHighTone ? 880 : 440); 
             oscillator.type = 'sine';
+            
             gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (customFreq ? 0.4 : 0.12));
             oscillator.start();
@@ -280,12 +268,9 @@
             
             if (currentPhase === 'LOBBY') btn.classList.add('disabled');
             
-            // FIXED/RETAINED: Selection highlights remain intact during geometric transformations
             if (myChoice === i) {
                 btn.classList.add('selected');
             }
-            
-            if (visualRouletteLockValue === i) btn.classList.add('is-targeted-danger');
 
             btn.addEventListener('click', () => {
                 if (!isAlive) return;
@@ -315,18 +300,15 @@
         else socket.emit('host_action', 'resume');
     });
 
+    // Intercept Level 5 Roulette reveal announcements from server
     socket.io.on('packet', (packet) => {
         if (packet.data && packet.data[0] === 'roulette_reveal') {
             const targetedNum = packet.data[1];
             visualRouletteLockValue = targetedNum;
             
-            wheel.classList.add('roulette-danger-glow');
-            timerDisplay.className = 'roulette-reveal-style';
-            timerDisplay.textContent = `🎯 TARGET: ${targetedNum}`;
-            phaseText.textContent = "🔥 ELIMINATION LOCK INCOMING";
-
-            const node = document.querySelector(`.num-node[data-number="${targetedNum}"]`);
-            if (node) node.classList.add('is-targeted-danger');
+            // CLEAN POP-UP: Simple typography presentation without the full-screen red borders or heavy shadows
+            timerDisplay.textContent = `🎯 NUMBER: ${targetedNum}`;
+            phaseText.textContent = "ELIMINATION LOCK";
 
             playWarningBeep(false, 120);
         }
@@ -336,10 +318,15 @@
         roomInfo.textContent = `👥 ${data.activePlayers}/${data.totalConnections} Players Alive`;
         roundInfo.textContent = data.phase === 'LOBBY' ? 'Lobby Stage' : `Round: ${data.round} (${data.maxNodes} Slots)`;
         
+        // FIXED: Vanishes cleanly when entering the choice phase loop again
         if (data.phase === 'CHOICE_PHASE') {
             visualRouletteLockValue = null;
-            wheel.classList.remove('roulette-danger-glow');
-            timerDisplay.className = '';
+        }
+
+        // FIXED: Force hard reset cleanup back to clean slate defaults if host pushes back to lobby
+        if (data.phase === 'LOBBY') {
+            myChoice = null;
+            visualRouletteLockValue = null;
         }
 
         if (visualRouletteLockValue === null) {
@@ -347,7 +334,6 @@
             phaseText.textContent = data.phase === 'GET_READY' ? 'GET READY' : data.phase.replace('_', ' ');
         }
 
-        // Sync visual selections loop mapping down from server status variables
         const myServerProfile = data.lobbyRegistry.find(p => p.id === socket.id);
         if (myServerProfile) myChoice = myServerProfile.currentChoice;
 
@@ -379,6 +365,7 @@
             gameOverOverlay.style.display = 'none';
         }
 
+        // FIXED: Guarantees circle geometry elements redraw perfectly to 20 when size metrics update
         if (activeWheelNodeCount !== data.maxNodes) {
             if (data.maxNodes < activeWheelNodeCount && data.phase !== 'LOBBY' && data.phase !== 'GAME_OVER') triggerScreenFlashGraphic(data.maxNodes);
             rebuildCircleWheel(data.maxNodes, data.phase);
@@ -395,7 +382,6 @@
 
         wheel.className = 'circle-container'; 
         if (data.phase === 'CHOICE_PHASE' && isAlive) wheel.classList.add('phase-choice');
-        if (visualRouletteLockValue !== null) wheel.classList.add('roulette-danger-glow');
 
         if (data.phase === 'CHOICE_PHASE') {
             document.querySelectorAll('.num-node').forEach(n => {
