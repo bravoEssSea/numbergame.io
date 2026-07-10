@@ -22,13 +22,21 @@ let gameTicker = null;
 
 let roundCounter = 1;
 let currentMaxNodes = 20; 
+let podiumData = []; 
+let rouletteNumber = null; // Stores the targeted number during a level-5 final showdown
 
 function changePhase(newPhase, duration) {
     gamePhase = newPhase;
     phaseTimer = duration;
     
-    // REMOVED: The choice clearing loop has been taken out.
-    // Choices now persist from the previous round automatically.
+    if (newPhase === 'CHOICE_PHASE') {
+        rouletteNumber = null; // Clear out the roulette targets
+        Object.keys(players).forEach(id => {
+            if (players[id].isAlive && players[id].isRegistered) {
+                players[id].currentChoice = null;
+            }
+        });
+    }
     
     if (newPhase === 'GET_READY') {
         evaluateChoices();
@@ -41,51 +49,92 @@ function evaluateChoices() {
     let counts = {};
     let alivePlayers = Object.values(players).filter(p => p.isAlive && p.isRegistered);
 
-    // Count choices (including persistent ones)
-    alivePlayers.forEach(p => {
-        if (p.currentChoice !== null) {
-            counts[p.currentChoice] = (counts[p.currentChoice] || 0) + 1;
-        }
-    });
+    // Context Evaluation Branches
+    if (currentMaxNodes === 5) {
+        // --- LEVEL 5 FINAL SHOWDOWN PROTOCOL ---
+        // Generate a random target number from 1 to 5
+        rouletteNumber = Math.floor(Math.random() * 5) + 1;
+        
+        // Flag immediate visual updates so clients can view the target
+        io.emit('roulette_reveal', rouletteNumber);
 
-    Object.keys(players).forEach(id => {
-        let p = players[id];
-        if (p.isAlive && p.isRegistered) {
-            // Elimination condition: 
-            // 1. They failed to choose anything at all (currentChoice is null)
-            // 2. Or their chosen number is a duplicate
-            if (p.currentChoice === null || counts[p.currentChoice] > 1) {
-                p.isAlive = false;
-                io.to(id).emit('player_status', 'ELIMINATED');
+        // DELAY ELIMINATIONS BY 3 SECONDS: Use a wrapper timeout so players can react
+        setTimeout(() => {
+            Object.keys(players).forEach(id => {
+                let p = players[id];
+                if (p.isAlive && p.isRegistered) {
+                    // Eliminate if they didn't vote, or if they matched the roulette number
+                    if (p.currentChoice === null || p.currentChoice === rouletteNumber) {
+                        p.isAlive = false;
+                        p.eliminatedInRound = roundCounter;
+                        io.to(id).emit('player_status', 'ELIMINATED');
+                    }
+                }
+            });
+            finalizeRoundProgress();
+        }, 3000);
+
+    } else {
+        // --- STANDARD DUPLICATE ELIMINATION ---
+        alivePlayers.forEach(p => {
+            if (p.currentChoice !== null) {
+                counts[p.currentChoice] = (counts[p.currentChoice] || 0) + 1;
             }
-        }
-    });
+        });
 
+        Object.keys(players).forEach(id => {
+            let p = players[id];
+            if (p.isAlive && p.isRegistered) {
+                if (p.currentChoice === null || counts[p.currentChoice] > 1) {
+                    p.isAlive = false;
+                    p.eliminatedInRound = roundCounter;
+                    io.to(id).emit('player_status', 'ELIMINATED');
+                }
+            }
+        });
+        finalizeRoundProgress();
+    }
+}
+
+function finalizeRoundProgress() {
     let survivors = Object.values(players).filter(p => p.isAlive && p.isRegistered);
     
-    if (survivors.length === 1) {
-        io.emit('announcement', `🏆 ${survivors[0].name} WINS THE GAME!`);
-        gamePhase = 'LOBBY';
-    } else if (survivors.length === 0) {
-        io.emit('announcement', "💀 Everyone was eliminated! No winners.");
-        gamePhase = 'LOBBY';
+    if (survivors.length <= 1) {
+        buildPodium();
+        gamePhase = 'GAME_OVER';
+        if (gameTicker) clearInterval(gameTicker);
+        broadcastState();
     } else {
         roundCounter++;
         if (roundCounter % 3 === 1 && roundCounter > 1) {
-            // Drop by 5 options, but if the circle shrinks past their current selection, 
-            // the player will need to pick a new valid number or face elimination.
             currentMaxNodes = Math.max(5, currentMaxNodes - 5); 
             
-            // Check if anyone's persistent choice is now out of bounds
             Object.keys(players).forEach(id => {
                 if (players[id].currentChoice > currentMaxNodes) {
-                    players[id].currentChoice = null; // Reset them because their option vanished
+                    players[id].currentChoice = null; 
                 }
             });
 
             io.emit('announcement', `⚠️ BOTTLENECK! Circle compressed to ${currentMaxNodes} options!`);
         }
+        broadcastState();
     }
+}
+
+function buildPodium() {
+    let ranked = Object.values(players)
+        .filter(p => p.isRegistered)
+        .sort((a, b) => {
+            if (a.isAlive && !b.isAlive) return -1;
+            if (!a.isAlive && b.isAlive) return 1;
+            return b.eliminatedInRound - a.eliminatedInRound;
+        });
+
+    podiumData = ranked.slice(0, 3).map((p, index) => ({
+        name: p.name,
+        placement: index + 1,
+        score: p.isAlive ? "🏆 Survivor" : `Round ${p.eliminatedInRound}`
+    }));
 }
 
 function broadcastState() {
@@ -108,14 +157,16 @@ function broadcastState() {
         hostId: hostId,
         lobbyRegistry: lobbyRegistry,
         round: roundCounter,
-        maxNodes: currentMaxNodes
+        maxNodes: currentMaxNodes,
+        podium: podiumData,
+        roulette: rouletteNumber // Pipe state hook downwards
     });
 }
 
 function startGameLoop() {
     if (gameTicker) clearInterval(gameTicker);
     gameTicker = setInterval(() => {
-        if (gamePhase === 'LOBBY' || gamePhase === 'PAUSED') return;
+        if (gamePhase === 'LOBBY' || gamePhase === 'PAUSED' || gamePhase === 'GAME_OVER') return;
 
         if (phaseTimer > 0) {
             phaseTimer--;
@@ -128,8 +179,10 @@ function startGameLoop() {
                 if (survivors.length > 1) {
                     changePhase('CHOICE_PHASE', 5);
                 } else {
-                    gamePhase = 'LOBBY';
+                    buildPodium();
+                    gamePhase = 'GAME_OVER';
                     broadcastState();
+                    if (gameTicker) clearInterval(gameTicker);
                 }
             }
         }
@@ -144,7 +197,8 @@ io.on('connection', (socket) => {
         name: 'Spectating...',
         isAlive: false,
         isRegistered: false,
-        currentChoice: null
+        currentChoice: null,
+        eliminatedInRound: 0
     };
 
     broadcastState();
@@ -162,19 +216,22 @@ io.on('connection', (socket) => {
     socket.on('host_action', (action) => {
         if (socket.id !== hostId) return;
 
-        if (action === 'start' && gamePhase === 'LOBBY') {
+        if (action === 'start' && (gamePhase === 'LOBBY' || gamePhase === 'GAME_OVER')) {
             roundCounter = 1;
             currentMaxNodes = 20; 
+            podiumData = [];
+            rouletteNumber = null;
             Object.keys(players).forEach(id => {
                 if (players[id].isRegistered) {
                     players[id].isAlive = true;
-                    players[id].currentChoice = null; // Fresh start
+                    players[id].currentChoice = null;
+                    players[id].eliminatedInRound = 0;
                 }
             });
             io.emit('player_status', 'ALIVE');
             changePhase('CHOICE_PHASE', 5);
             startGameLoop();
-        } else if (action === 'pause' && gamePhase !== 'LOBBY' && gamePhase !== 'PAUSED') {
+        } else if (action === 'pause' && gamePhase !== 'LOBBY' && gamePhase !== 'PAUSED' && gamePhase !== 'GAME_OVER') {
             previousPhase = gamePhase;
             gamePhase = 'PAUSED';
             io.emit('announcement', "⏸️ Game Paused by Host");
@@ -188,10 +245,13 @@ io.on('connection', (socket) => {
             phaseTimer = 0;
             roundCounter = 1;
             currentMaxNodes = 20;
+            podiumData = [];
+            rouletteNumber = null;
             Object.keys(players).forEach(id => {
                 if (players[id].isRegistered) {
                     players[id].isAlive = true;
                     players[id].currentChoice = null;
+                    players[id].eliminatedInRound = 0;
                 }
             });
             io.emit('player_status', 'ALIVE');
