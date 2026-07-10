@@ -25,6 +25,9 @@ let currentMaxNodes = 20;
 let podiumData = []; 
 let rouletteNumber = null;
 
+// FIXED: Permanent record tracking nicknames and their life state across disconnect hooks
+let historicalRegistry = {}; 
+
 function changePhase(newPhase, duration) {
     gamePhase = newPhase;
     phaseTimer = duration;
@@ -62,6 +65,13 @@ function evaluateChoices() {
                     if (p.currentChoice === null || p.currentChoice === rouletteNumber) {
                         p.isAlive = false;
                         p.eliminatedInRound = roundCounter;
+                        
+                        // Sync tracking down to history ledger
+                        if (historicalRegistry[p.name]) {
+                            historicalRegistry[p.name].isAlive = false;
+                            historicalRegistry[p.name].eliminatedInRound = roundCounter;
+                        }
+                        
                         io.to(id).emit('player_status', 'ELIMINATED');
                     }
                 }
@@ -82,6 +92,13 @@ function evaluateChoices() {
                 if (p.currentChoice === null || counts[p.currentChoice] > 1) {
                     p.isAlive = false;
                     p.eliminatedInRound = roundCounter;
+                    
+                    // Sync tracking down to history ledger
+                    if (historicalRegistry[p.name]) {
+                        historicalRegistry[p.name].isAlive = false;
+                        historicalRegistry[p.name].eliminatedInRound = roundCounter;
+                    }
+                    
                     io.to(id).emit('player_status', 'ELIMINATED');
                 }
             }
@@ -116,8 +133,8 @@ function finalizeRoundProgress() {
 }
 
 function buildPodium() {
-    let ranked = Object.values(players)
-        .filter(p => p.isRegistered)
+    // Generate rank lists using the historical tracking ledger to capture players who disconnected early
+    let ranked = Object.values(historicalRegistry)
         .sort((a, b) => {
             if (a.isAlive && !b.isAlive) return -1;
             if (!a.isAlive && b.isAlive) return 1;
@@ -199,14 +216,32 @@ io.on('connection', (socket) => {
 
     socket.on('register_player', (nickname) => {
         if (!players[socket.id]) return;
-        players[socket.id].name = nickname;
+        
+        // Clean formatting to ensure case-insensitive registration checks
+        const searchKey = nickname.trim().toLowerCase();
+        
+        // FIXED: Verify if this specific nickname exists inside our historical elimination ledger
+        if (historicalRegistry[searchKey]) {
+            // Restore their existing historical life state profile record parameters
+            players[socket.id].name = historicalRegistry[searchKey].name;
+            players[socket.id].isAlive = historicalRegistry[searchKey].isAlive;
+            players[socket.id].eliminatedInRound = historicalRegistry[searchKey].eliminatedInRound;
+        } else {
+            // Register a brand new unique name record row entry profile properties
+            players[socket.id].name = nickname.trim();
+            players[socket.id].isAlive = (gamePhase !== 'GAME_OVER');
+            players[socket.id].eliminatedInRound = 0;
+            
+            // Map into the historical cache record index lists definitions
+            historicalRegistry[searchKey] = {
+                name: players[socket.id].name,
+                isAlive: players[socket.id].isAlive,
+                eliminatedInRound: 0
+            };
+        }
+
         players[socket.id].isRegistered = true;
-        
-        // FIXED: Late-joiners are marked as ALIVE unless a podium screen is active.
-        // They will default to no selection (null) and must pick a number before CHOICE_PHASE ticks down.
-        players[socket.id].isAlive = (gamePhase !== 'GAME_OVER');
-        
-        socket.emit('player_status', players[socket.id].isAlive ? 'ALIVE' : 'SPECTATOR');
+        socket.emit('player_status', players[socket.id].isAlive ? 'ALIVE' : 'ELIMINATED');
         broadcastState();
     });
 
@@ -222,11 +257,18 @@ io.on('connection', (socket) => {
                 podiumData = [];
                 rouletteNumber = null;
                 
+                // FIXED: Clear out historical death ledgers completely on resets
+                historicalRegistry = {};
+                
                 Object.keys(players).forEach(id => {
                     if (players[id].isRegistered) {
                         players[id].isAlive = true;
                         players[id].currentChoice = null;
                         players[id].eliminatedInRound = 0;
+                        
+                        // Re-initialize ledger entry
+                        const key = players[id].name.toLowerCase();
+                        historicalRegistry[key] = { name: players[id].name, isAlive: true, eliminatedInRound: 0 };
                     }
                 });
                 
@@ -238,11 +280,17 @@ io.on('connection', (socket) => {
                 currentMaxNodes = 20; 
                 podiumData = [];
                 rouletteNumber = null;
+                
+                // Clear and rebuild ledger definitions right upon starting line execution frames
+                historicalRegistry = {};
                 Object.keys(players).forEach(id => {
                     if (players[id].isRegistered) {
                         players[id].isAlive = true;
                         players[id].currentChoice = null;
                         players[id].eliminatedInRound = 0;
+                        
+                        const key = players[id].name.toLowerCase();
+                        historicalRegistry[key] = { name: players[id].name, isAlive: true, eliminatedInRound: 0 };
                     }
                 });
                 io.emit('player_status', 'ALIVE');
@@ -265,6 +313,10 @@ io.on('connection', (socket) => {
             currentMaxNodes = 20;
             podiumData = [];
             rouletteNumber = null;
+            
+            // FIXED: Flush registry variables out entirely on manual admin resets
+            historicalRegistry = {};
+            
             Object.keys(players).forEach(id => {
                 if (players[id].isRegistered) {
                     players[id].isAlive = true;
@@ -285,6 +337,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+        // Remove from current connections loop metrics, but historical entries persist cleanly!
         delete players[socket.id];
         if (hostId === socket.id) {
             const remainingIds = Object.keys(players);
